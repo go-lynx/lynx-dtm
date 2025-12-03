@@ -7,7 +7,7 @@ import (
 
 	"github.com/dtm-labs/client/dtmcli"
 	"github.com/dtm-labs/client/dtmgrpc"
-	"github.com/go-lynx/lynx/app/log"
+	"github.com/go-lynx/lynx/log"
 	"github.com/go-resty/resty/v2"
 	"google.golang.org/grpc/metadata"
 )
@@ -44,41 +44,41 @@ type TransactionOptions struct {
 
 // ExecuteXA execute XA transaction
 func (h *TransactionHelper) ExecuteXA(ctx context.Context, gid string, branches []XABranch, opts *TransactionOptions) error {
-    if opts == nil {
-        opts = DefaultTransactionOptions()
-    }
+	if opts == nil {
+		opts = DefaultTransactionOptions()
+	}
 
-    // Use XA global transaction API
-    err := dtmcli.XaGlobalTransaction(h.client.GetServerURL(), gid, func(xa *dtmcli.Xa) (*resty.Response, error) {
-        // Set transaction options
-        xa.TimeoutToFail = opts.TimeoutToFail
-        xa.RequestTimeout = opts.BranchTimeout
-        xa.RetryInterval = opts.RetryInterval
+	// Use XA global transaction API
+	err := dtmcli.XaGlobalTransaction(h.client.GetServerURL(), gid, func(xa *dtmcli.Xa) (*resty.Response, error) {
+		// Set transaction options
+		xa.TimeoutToFail = opts.TimeoutToFail
+		xa.RequestTimeout = opts.BranchTimeout
+		xa.RetryInterval = opts.RetryInterval
 
-        // Call all XA branches
-        for _, branch := range branches {
-            _, err := xa.CallBranch(branch.Action, branch.Data)
-            if err != nil {
-                log.Errorf("XA branch failed: gid=%s, action=%s, error=%v", gid, branch.Action, err)
-                return nil, err
-            }
-        }
-        return nil, nil
-    })
+		// Call all XA branches
+		for _, branch := range branches {
+			_, err := xa.CallBranch(branch.Action, branch.Data)
+			if err != nil {
+				log.Errorf("XA branch failed: gid=%s, action=%s, error=%v", gid, branch.Action, err)
+				return nil, err
+			}
+		}
+		return nil, nil
+	})
 
-    if err != nil {
-        log.Errorf("XA transaction failed: gid=%s, error=%v", gid, err)
-        return err
-    }
+	if err != nil {
+		log.Errorf("XA transaction failed: gid=%s, error=%v", gid, err)
+		return err
+	}
 
-    log.Infof("XA transaction submitted successfully: gid=%s", gid)
+	log.Infof("XA transaction submitted successfully: gid=%s", gid)
 
-    // If need to wait for result
-    if opts.WaitResult {
-        return h.waitTransactionResult(ctx, gid, TransTypeXA)
-    }
+	// If need to wait for result
+	if opts.WaitResult {
+		return h.waitTransactionResult(ctx, gid, TransTypeXA)
+	}
 
-    return nil
+	return nil
 }
 
 // DefaultTransactionOptions returns default transaction options

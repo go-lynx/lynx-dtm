@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/dtm-labs/client/dtmcli"
-	"github.com/go-lynx/lynx/app/log"
+	"github.com/go-lynx/lynx/log"
 	"github.com/go-resty/resty/v2"
 )
 

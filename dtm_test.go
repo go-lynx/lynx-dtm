@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/go-lynx/lynx/plugins/dtm/dtm/conf"
+	"github.com/go-lynx/lynx-dtm/conf"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -396,4 +396,3 @@ func TestXABranch(t *testing.T) {
 	assert.Equal(t, "http://localhost:8080/action", branch.Action)
 	assert.Equal(t, `{"key":"value"}`, branch.Data)
 }
-

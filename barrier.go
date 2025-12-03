@@ -8,7 +8,7 @@ import (
 	"github.com/dtm-labs/client/dtmcli"
 	"github.com/dtm-labs/client/dtmcli/dtmimp"
 	"github.com/dtm-labs/client/dtmgrpc"
-	"github.com/go-lynx/lynx/app/log"
+	"github.com/go-lynx/lynx/log"
 )
 
 // BarrierHandler transaction barrier handler

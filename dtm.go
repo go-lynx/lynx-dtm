@@ -5,9 +5,9 @@ import (
 	"fmt"
 
 	"github.com/dtm-labs/client/dtmcli"
-	"github.com/go-lynx/lynx/app/log"
+	"github.com/go-lynx/lynx-dtm/conf"
+	"github.com/go-lynx/lynx/log"
 	"github.com/go-lynx/lynx/plugins"
-	"github.com/go-lynx/lynx/plugins/dtm/dtm/conf"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
