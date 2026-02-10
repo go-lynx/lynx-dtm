@@ -6,7 +6,7 @@ toolchain go1.25.3
 
 require (
 	github.com/dtm-labs/client v1.18.7
-	github.com/go-lynx/lynx v1.5.2
+	github.com/go-lynx/lynx v1.5.3
 	github.com/go-resty/resty/v2 v2.11.0
 	github.com/stretchr/testify v1.11.1
 	google.golang.org/grpc v1.73.0
