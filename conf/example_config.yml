@@ -1,0 +1,39 @@
+# Lynx DTM 插件配置示例
+
+lynx:
+  dtm:
+    # 是否启用 DTM 分布式事务插件
+    enabled: true
+
+    # DTM 服务 HTTP 地址（必需，用于 newGid、query 等）
+    server_url: "http://localhost:36789/api/dtmsvr"
+
+    # DTM 服务 gRPC 地址（可选，用于 gRPC 调用）
+    grpc_server: "localhost:36790"
+
+    # 请求超时（秒）
+    timeout: 10
+
+    # 重试间隔（秒）
+    retry_interval: 10
+
+    # 全局事务超时（秒）
+    transaction_timeout: 60
+
+    # 分支事务超时（秒）
+    branch_timeout: 30
+
+    # 需要透传的请求头（如链路追踪 ID）
+    pass_through_headers:
+      - "X-Request-ID"
+      - "X-User-ID"
+      - "X-Trace-ID"
+
+    # gRPC TLS 配置（生产环境建议启用）
+    grpc_tls_enabled: false
+    # grpc_cert_file: "/path/to/client.crt"
+    # grpc_key_file: "/path/to/client.key"
+    # grpc_ca_file: "/path/to/ca.crt"
+
+    # 连接重试次数（默认 3）
+    max_connection_retries: 3

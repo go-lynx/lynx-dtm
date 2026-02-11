@@ -2,6 +2,7 @@ package dtm
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/go-lynx/lynx-dtm/conf"
@@ -289,9 +290,41 @@ func TestTransactionHelper_CheckTransactionStatus(t *testing.T) {
 	client := NewDTMClient()
 	helper := NewTransactionHelper(client)
 
+	// With empty server URL - should fail
+	_, err := helper.CheckTransactionStatus("test-gid")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not configured")
+
+	// With server URL set - may succeed (if DTM running) or fail (connection error)
+	client.serverURL = "http://localhost:36789/api/dtmsvr"
 	status, err := helper.CheckTransactionStatus("test-gid")
-	assert.NoError(t, err)
-	assert.Equal(t, "success", status)
+	if err != nil {
+		t.Logf("CheckTransactionStatus returned error (expected if DTM server not running): %v", err)
+	} else {
+		assert.NotEmpty(t, status)
+	}
+}
+
+// TestDTMClient_CallBranch tests deprecated CallBranch
+func TestDTMClient_CallBranch(t *testing.T) {
+	client := NewDTMClient()
+	client.serverURL = "http://localhost:36789/api/dtmsvr"
+
+	bb, err := client.CallBranch(context.Background(), nil, "try", "confirm", "cancel")
+	assert.Error(t, err)
+	assert.Nil(t, bb)
+	assert.True(t, errors.Is(err, ErrNotImplemented))
+}
+
+// TestBarrierHandler_CreateBarrierFromGin tests CreateBarrierFromGin
+func TestBarrierHandler_CreateBarrierFromGin(t *testing.T) {
+	client := NewDTMClient()
+	handler := NewBarrierHandler(client)
+
+	bb, err := handler.CreateBarrierFromGin(nil)
+	assert.Error(t, err)
+	assert.Nil(t, bb)
+	assert.True(t, errors.Is(err, ErrNotImplemented))
 }
 
 // TestTransactionHelper_RegisterGrpcService tests registering gRPC service
@@ -304,10 +337,11 @@ func TestTransactionHelper_RegisterGrpcService(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not configured")
 
-	// Test with gRPC server configured
+	// Test with gRPC server configured - returns ErrNotImplemented (not yet implemented)
 	client.grpcServer = "localhost:36790"
 	err = helper.RegisterGrpcService("test-service", "localhost:8080")
-	assert.NoError(t, err)
+	assert.Error(t, err)
+	assert.True(t, errors.Is(err, ErrNotImplemented))
 }
 
 // TestCreateGrpcContext tests creating gRPC context
@@ -329,6 +363,33 @@ func TestExtractGrpcTransInfo(t *testing.T) {
 	if err != nil {
 		t.Logf("ExtractGrpcTransInfo returned error (expected): %v", err)
 	}
+}
+
+// TestValidateConfig tests configuration validation
+func TestValidateConfig(t *testing.T) {
+	// Valid config
+	err := ValidateConfig(&conf.DTM{
+		Enabled:            true,
+		ServerUrl:          "http://localhost:36789/api/dtmsvr",
+		TransactionTimeout: 60,
+		BranchTimeout:      30,
+	})
+	assert.NoError(t, err)
+
+	// Enabled but no server_url
+	err = ValidateConfig(&conf.DTM{Enabled: true})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "server_url")
+
+	// Invalid server_url scheme
+	err = ValidateConfig(&conf.DTM{Enabled: true, ServerUrl: "ftp://localhost:36789"})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "scheme")
+
+	// TLS enabled but missing cert
+	err = ValidateConfig(&conf.DTM{GrpcTlsEnabled: true})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "cert_file")
 }
 
 // TestTransactionTypes tests transaction type constants

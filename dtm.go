@@ -2,13 +2,18 @@ package dtm
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"os"
+	"time"
 
 	"github.com/dtm-labs/client/dtmcli"
 	"github.com/go-lynx/lynx-dtm/conf"
 	"github.com/go-lynx/lynx/log"
 	"github.com/go-lynx/lynx/plugins"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
@@ -88,6 +93,13 @@ func (d *DTMClient) InitializeResources(rt plugins.Runtime) error {
 	if d.conf.BranchTimeout == 0 {
 		d.conf.BranchTimeout = 30
 	}
+	if d.conf.MaxConnectionRetries == 0 {
+		d.conf.MaxConnectionRetries = 3
+	}
+
+	if err := ValidateConfig(d.conf); err != nil {
+		return fmt.Errorf("DTM config validation failed: %w", err)
+	}
 
 	return nil
 }
@@ -107,18 +119,30 @@ func (d *DTMClient) StartupTasks() error {
 		log.Infof("DTM HTTP client configured with server: %s", d.conf.ServerUrl)
 	}
 
-	// Initialize gRPC connection if configured
+	// Initialize gRPC connection if configured (with retry)
 	if d.conf.GrpcServer != "" {
-		var err error
-		d.grpcConn, err = grpc.Dial(d.conf.GrpcServer,
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(100*1024*1024)),
-		)
-		if err != nil {
-			return fmt.Errorf("failed to connect to DTM gRPC server: %w", err)
+		maxRetries := int(d.conf.MaxConnectionRetries)
+		if maxRetries < 1 {
+			maxRetries = 1
 		}
-		d.grpcServer = d.conf.GrpcServer
-		log.Infof("DTM gRPC client initialized with server: %s", d.conf.GrpcServer)
+		var err error
+		for attempt := 0; attempt < maxRetries; attempt++ {
+			if attempt > 0 {
+				backoff := time.Duration(attempt) * 2 * time.Second
+				log.Infof("Retrying DTM gRPC connection in %v (attempt %d/%d)", backoff, attempt+1, maxRetries)
+				time.Sleep(backoff)
+			}
+			d.grpcConn, err = d.dialGrpc()
+			if err == nil {
+				d.grpcServer = d.conf.GrpcServer
+				log.Infof("DTM gRPC client initialized with server: %s", d.conf.GrpcServer)
+				break
+			}
+			log.Warnf("DTM gRPC connection attempt %d failed: %v", attempt+1, err)
+		}
+		if d.grpcConn == nil {
+			return fmt.Errorf("failed to connect to DTM gRPC server after %d attempts: %w", maxRetries, err)
+		}
 	}
 
 	log.Infof("DTM client successfully initialized")
@@ -134,6 +158,56 @@ func (d *DTMClient) CleanupTasks() error {
 		}
 	}
 	return nil
+}
+
+// dialGrpc creates gRPC connection with optional TLS
+func (d *DTMClient) dialGrpc() (*grpc.ClientConn, error) {
+	opts := []grpc.DialOption{
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(100 * 1024 * 1024)),
+	}
+
+	if d.conf.GetGrpcTlsEnabled() {
+		tlsConfig, err := buildGrpcTLSConfig(
+			d.conf.GetGrpcCertFile(),
+			d.conf.GetGrpcKeyFile(),
+			d.conf.GetGrpcCaFile(),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("build TLS config: %w", err)
+		}
+		opts = append(opts, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+	} else {
+		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	}
+
+	return grpc.Dial(d.conf.GrpcServer, opts...)
+}
+
+// buildGrpcTLSConfig builds TLS config from certificate files
+func buildGrpcTLSConfig(certFile, keyFile, caFile string) (*tls.Config, error) {
+	config := &tls.Config{}
+
+	if certFile != "" && keyFile != "" {
+		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+		if err != nil {
+			return nil, fmt.Errorf("load client certificate: %w", err)
+		}
+		config.Certificates = []tls.Certificate{cert}
+	}
+
+	if caFile != "" {
+		caCert, err := os.ReadFile(caFile)
+		if err != nil {
+			return nil, fmt.Errorf("read CA certificate: %w", err)
+		}
+		caCertPool := x509.NewCertPool()
+		if !caCertPool.AppendCertsFromPEM(caCert) {
+			return nil, fmt.Errorf("parse CA certificate")
+		}
+		config.RootCAs = caCertPool
+	}
+
+	return config, nil
 }
 
 // GetServerURL returns the DTM server URL
@@ -152,6 +226,10 @@ func (d *DTMClient) NewSaga(gid string) *dtmcli.Saga {
 		log.Errorf("DTM server URL is not configured")
 		return nil
 	}
+	if d.conf == nil {
+		log.Errorf("DTM configuration not initialized")
+		return nil
+	}
 	saga := dtmcli.NewSaga(d.serverURL, gid)
 	saga.TimeoutToFail = int64(d.conf.TransactionTimeout)
 	saga.RequestTimeout = int64(d.conf.Timeout)
@@ -163,6 +241,10 @@ func (d *DTMClient) NewSaga(gid string) *dtmcli.Saga {
 func (d *DTMClient) NewMsg(gid string) *dtmcli.Msg {
 	if d.serverURL == "" {
 		log.Errorf("DTM server URL is not configured")
+		return nil
+	}
+	if d.conf == nil {
+		log.Errorf("DTM configuration not initialized")
 		return nil
 	}
 	msg := dtmcli.NewMsg(d.serverURL, gid)
@@ -194,31 +276,59 @@ func (d *DTMClient) NewXa(gid string) *dtmcli.Xa {
 	return nil
 }
 
-// GenerateGid generates a new global transaction ID
+// GenerateGid generates a new global transaction ID.
+// Returns empty string if DTM server is unreachable (avoids panic from dtmcli.MustGenGid).
 func (d *DTMClient) GenerateGid() string {
 	if d.serverURL == "" {
 		log.Errorf("DTM server URL is not configured")
 		return ""
 	}
-	return dtmcli.MustGenGid(d.serverURL)
+	var gid string
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Errorf("GenerateGid panic recovered (DTM server may be unreachable): %v", r)
+				if m := d.getMetrics(); m != nil {
+					m.RecordGidRequest("failed")
+				}
+			}
+		}()
+		gid = dtmcli.MustGenGid(d.serverURL)
+		if m := d.getMetrics(); m != nil {
+			m.RecordGidRequest("success")
+		}
+	}()
+	return gid
 }
 
-// CallBranch calls a branch transaction
-func (d *DTMClient) CallBranch(ctx context.Context, body interface{}, tryURL string, confirmURL string, cancelURL string) (*dtmcli.BranchBarrier, error) {
-	if d.serverURL == "" {
-		return nil, fmt.Errorf("DTM server URL is not configured")
-	}
-
-	// Create a branch barrier for handling idempotency
-	bb, err := dtmcli.BarrierFromQuery(nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return bb, nil
+// CallBranch is deprecated. It does not perform actual TCC branch calls.
+// Use dtmcli.TccGlobalTransaction with tcc.CallBranch, or TransactionHelper.ExecuteTCC instead.
+func (d *DTMClient) CallBranch(_ context.Context, _ interface{}, _, _, _ string) (*dtmcli.BranchBarrier, error) {
+	return nil, fmt.Errorf("%w: use dtmcli.TccGlobalTransaction or TransactionHelper.ExecuteTCC for TCC branches", ErrNotImplemented)
 }
 
 // GetConfig returns the DTM configuration
 func (d *DTMClient) GetConfig() *conf.DTM {
 	return d.conf
+}
+
+// IsEnabled returns whether the DTM plugin is enabled.
+func (d *DTMClient) IsEnabled() bool {
+	return d.conf != nil && d.conf.GetEnabled()
+}
+
+// Configure updates the plugin configuration at runtime
+func (d *DTMClient) Configure(c any) error {
+	if c == nil {
+		return nil
+	}
+	cfg, ok := c.(*conf.DTM)
+	if !ok {
+		return fmt.Errorf("invalid configuration type: expected *conf.DTM, got %T", c)
+	}
+	d.conf = cfg
+	if cfg.ServerUrl != "" {
+		d.serverURL = cfg.ServerUrl
+	}
+	return nil
 }

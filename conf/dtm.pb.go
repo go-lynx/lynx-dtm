@@ -43,8 +43,18 @@ type DTM struct {
 	TransactionTimeout int32 `protobuf:"varint,7,opt,name=transaction_timeout,json=transactionTimeout,proto3" json:"transaction_timeout,omitempty"`
 	// branch_timeout represents the branch transaction timeout in seconds.
 	BranchTimeout int32 `protobuf:"varint,8,opt,name=branch_timeout,json=branchTimeout,proto3" json:"branch_timeout,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// grpc_tls_enabled whether to enable TLS for gRPC connection.
+	GrpcTlsEnabled bool `protobuf:"varint,9,opt,name=grpc_tls_enabled,json=grpcTlsEnabled,proto3" json:"grpc_tls_enabled,omitempty"`
+	// grpc_cert_file path to client certificate file for gRPC TLS.
+	GrpcCertFile string `protobuf:"bytes,10,opt,name=grpc_cert_file,json=grpcCertFile,proto3" json:"grpc_cert_file,omitempty"`
+	// grpc_key_file path to client private key file for gRPC TLS.
+	GrpcKeyFile string `protobuf:"bytes,11,opt,name=grpc_key_file,json=grpcKeyFile,proto3" json:"grpc_key_file,omitempty"`
+	// grpc_ca_file path to CA certificate file for gRPC TLS.
+	GrpcCaFile string `protobuf:"bytes,12,opt,name=grpc_ca_file,json=grpcCaFile,proto3" json:"grpc_ca_file,omitempty"`
+	// max_connection_retries maximum retries when connecting to DTM (default 3).
+	MaxConnectionRetries int32 `protobuf:"varint,13,opt,name=max_connection_retries,json=maxConnectionRetries,proto3" json:"max_connection_retries,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *DTM) Reset() {
@@ -133,11 +143,46 @@ func (x *DTM) GetBranchTimeout() int32 {
 	return 0
 }
 
+func (x *DTM) GetGrpcTlsEnabled() bool {
+	if x != nil {
+		return x.GrpcTlsEnabled
+	}
+	return false
+}
+
+func (x *DTM) GetGrpcCertFile() string {
+	if x != nil {
+		return x.GrpcCertFile
+	}
+	return ""
+}
+
+func (x *DTM) GetGrpcKeyFile() string {
+	if x != nil {
+		return x.GrpcKeyFile
+	}
+	return ""
+}
+
+func (x *DTM) GetGrpcCaFile() string {
+	if x != nil {
+		return x.GrpcCaFile
+	}
+	return ""
+}
+
+func (x *DTM) GetMaxConnectionRetries() int32 {
+	if x != nil {
+		return x.MaxConnectionRetries
+	}
+	return 0
+}
+
 var File_dtm_proto protoreflect.FileDescriptor
 
 const file_dtm_proto_rawDesc = "" +
 	"\n" +
-	"\tdtm.proto\x12\x18lynx.protobuf.plugin.dtm\"\xaa\x02\n" +
+	"\tdtm.proto\x12\x18lynx.protobuf.plugin.dtm\"\xf6\x03\n" +
 	"\x03DTM\x12\x18\n" +
 	"\aenabled\x18\x01 \x01(\bR\aenabled\x12\x1d\n" +
 	"\n" +
@@ -148,7 +193,14 @@ const file_dtm_proto_rawDesc = "" +
 	"\x0eretry_interval\x18\x05 \x01(\x05R\rretryInterval\x120\n" +
 	"\x14pass_through_headers\x18\x06 \x03(\tR\x12passThroughHeaders\x12/\n" +
 	"\x13transaction_timeout\x18\a \x01(\x05R\x12transactionTimeout\x12%\n" +
-	"\x0ebranch_timeout\x18\b \x01(\x05R\rbranchTimeoutB3Z1github.com/go-lynx/lynx/plugins/dtm/dtm/conf;confb\x06proto3"
+	"\x0ebranch_timeout\x18\b \x01(\x05R\rbranchTimeout\x12(\n" +
+	"\x10grpc_tls_enabled\x18\t \x01(\bR\x0egrpcTlsEnabled\x12$\n" +
+	"\x0egrpc_cert_file\x18\n" +
+	" \x01(\tR\fgrpcCertFile\x12\"\n" +
+	"\rgrpc_key_file\x18\v \x01(\tR\vgrpcKeyFile\x12 \n" +
+	"\fgrpc_ca_file\x18\f \x01(\tR\n" +
+	"grpcCaFile\x124\n" +
+	"\x16max_connection_retries\x18\r \x01(\x05R\x14maxConnectionRetriesB'Z%github.com/go-lynx/lynx-dtm/conf;confb\x06proto3"
 
 var (
 	file_dtm_proto_rawDescOnce sync.Once

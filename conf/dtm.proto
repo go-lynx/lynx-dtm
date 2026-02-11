@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package lynx.protobuf.plugin.dtm;
 
-option go_package = "github.com/go-lynx/lynx/plugins/dtm/dtm/conf;conf";
+option go_package = "github.com/go-lynx/lynx-dtm/conf;conf";
 
 // The DTM message defines the configuration information for the DTM plugin.
 message DTM {
@@ -32,4 +32,19 @@ message DTM {
   
   // branch_timeout represents the branch transaction timeout in seconds.
   int32 branch_timeout = 8;
+  
+  // grpc_tls_enabled whether to enable TLS for gRPC connection.
+  bool grpc_tls_enabled = 9;
+  
+  // grpc_cert_file path to client certificate file for gRPC TLS.
+  string grpc_cert_file = 10;
+  
+  // grpc_key_file path to client private key file for gRPC TLS.
+  string grpc_key_file = 11;
+  
+  // grpc_ca_file path to CA certificate file for gRPC TLS.
+  string grpc_ca_file = 12;
+  
+  // max_connection_retries maximum retries when connecting to DTM (default 3).
+  int32 max_connection_retries = 13;
 }

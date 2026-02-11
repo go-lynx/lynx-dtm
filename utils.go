@@ -2,7 +2,12 @@ package dtm
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/dtm-labs/client/dtmcli"
@@ -48,6 +53,16 @@ func (h *TransactionHelper) ExecuteXA(ctx context.Context, gid string, branches 
 		opts = DefaultTransactionOptions()
 	}
 
+	start := time.Now()
+	if m := h.client.getMetrics(); m != nil {
+		m.IncActiveTransactions()
+	}
+	defer func() {
+		if m := h.client.getMetrics(); m != nil {
+			m.DecActiveTransactions()
+		}
+	}()
+
 	// Use XA global transaction API
 	err := dtmcli.XaGlobalTransaction(h.client.GetServerURL(), gid, func(xa *dtmcli.Xa) (*resty.Response, error) {
 		// Set transaction options
@@ -68,6 +83,7 @@ func (h *TransactionHelper) ExecuteXA(ctx context.Context, gid string, branches 
 
 	if err != nil {
 		log.Errorf("XA transaction failed: gid=%s, error=%v", gid, err)
+		recordTransactionMetrics(h.client, "xa", "failed", start)
 		return err
 	}
 
@@ -75,9 +91,11 @@ func (h *TransactionHelper) ExecuteXA(ctx context.Context, gid string, branches 
 
 	// If need to wait for result
 	if opts.WaitResult {
-		return h.waitTransactionResult(ctx, gid, TransTypeXA)
+		err = h.waitTransactionResult(ctx, gid, TransTypeXA)
+		recordTransactionMetrics(h.client, "xa", statusFromErr(err), start)
+		return err
 	}
-
+	recordTransactionMetrics(h.client, "xa", "success", start)
 	return nil
 }
 
@@ -89,6 +107,25 @@ func DefaultTransactionOptions() *TransactionOptions {
 		RetryInterval: 10,
 		WaitResult:    false,
 		Concurrent:    false,
+	}
+}
+
+// statusFromErr maps error to metrics status
+func statusFromErr(err error) string {
+	if err == nil {
+		return "success"
+	}
+	if strings.Contains(err.Error(), "timeout") {
+		return "timeout"
+	}
+	return "failed"
+}
+
+// recordTransactionMetrics records transaction metrics
+func recordTransactionMetrics(client *DTMClient, txType, status string, start time.Time) {
+	if m := client.getMetrics(); m != nil {
+		m.RecordTransaction(txType, status)
+		m.RecordTransactionDuration(txType, status, time.Since(start).Seconds())
 	}
 }
 
@@ -110,8 +147,19 @@ func (h *TransactionHelper) ExecuteSAGA(ctx context.Context, gid string, branche
 		opts = DefaultTransactionOptions()
 	}
 
+	start := time.Now()
+	if m := h.client.getMetrics(); m != nil {
+		m.IncActiveTransactions()
+	}
+	defer func() {
+		if m := h.client.getMetrics(); m != nil {
+			m.DecActiveTransactions()
+		}
+	}()
+
 	saga := h.client.NewSaga(gid)
 	if saga == nil {
+		recordTransactionMetrics(h.client, "saga", "failed", start)
 		return fmt.Errorf("failed to create SAGA transaction")
 	}
 
@@ -120,9 +168,13 @@ func (h *TransactionHelper) ExecuteSAGA(ctx context.Context, gid string, branche
 	saga.RetryInterval = opts.RetryInterval
 	saga.Concurrent = opts.Concurrent
 
-	// Add custom request headers
-	if len(opts.CustomHeaders) > 0 {
-		saga.BranchHeaders = opts.CustomHeaders
+	// Add request headers (pass_through from config + custom)
+	passThrough := []string(nil)
+	if cfg := h.client.GetConfig(); cfg != nil {
+		passThrough = cfg.GetPassThroughHeaders()
+	}
+	if headers := mergeBranchHeaders(passThrough, opts.CustomHeaders); len(headers) > 0 {
+		saga.BranchHeaders = headers
 	}
 
 	// Add all branches
@@ -134,6 +186,7 @@ func (h *TransactionHelper) ExecuteSAGA(ctx context.Context, gid string, branche
 	err := saga.Submit()
 	if err != nil {
 		log.Errorf("SAGA transaction failed: gid=%s, error=%v", gid, err)
+		recordTransactionMetrics(h.client, "saga", "failed", start)
 		return err
 	}
 
@@ -141,9 +194,11 @@ func (h *TransactionHelper) ExecuteSAGA(ctx context.Context, gid string, branche
 
 	// If need to wait for result
 	if opts.WaitResult {
-		return h.waitTransactionResult(ctx, gid, TransTypeSAGA)
+		err = h.waitTransactionResult(ctx, gid, TransTypeSAGA)
+		recordTransactionMetrics(h.client, "saga", statusFromErr(err), start)
+		return err
 	}
-
+	recordTransactionMetrics(h.client, "saga", "success", start)
 	return nil
 }
 
@@ -153,6 +208,16 @@ func (h *TransactionHelper) ExecuteTCC(ctx context.Context, gid string, branches
 		opts = DefaultTransactionOptions()
 	}
 
+	start := time.Now()
+	if m := h.client.getMetrics(); m != nil {
+		m.IncActiveTransactions()
+	}
+	defer func() {
+		if m := h.client.getMetrics(); m != nil {
+			m.DecActiveTransactions()
+		}
+	}()
+
 	// Use the new TCC global transaction API
 	err := dtmcli.TccGlobalTransaction(h.client.GetServerURL(), gid, func(tcc *dtmcli.Tcc) (*resty.Response, error) {
 		// Set transaction options
@@ -160,9 +225,13 @@ func (h *TransactionHelper) ExecuteTCC(ctx context.Context, gid string, branches
 		tcc.RequestTimeout = opts.BranchTimeout
 		tcc.RetryInterval = opts.RetryInterval
 
-		// Add custom request headers
-		if len(opts.CustomHeaders) > 0 {
-			tcc.BranchHeaders = opts.CustomHeaders
+		// Add request headers (pass_through from config + custom)
+		passThrough := []string(nil)
+		if cfg := h.client.GetConfig(); cfg != nil {
+			passThrough = cfg.GetPassThroughHeaders()
+		}
+		if headers := mergeBranchHeaders(passThrough, opts.CustomHeaders); len(headers) > 0 {
+			tcc.BranchHeaders = headers
 		}
 
 		// Call all Try branches
@@ -179,6 +248,7 @@ func (h *TransactionHelper) ExecuteTCC(ctx context.Context, gid string, branches
 
 	if err != nil {
 		log.Errorf("TCC transaction failed: gid=%s, error=%v", gid, err)
+		recordTransactionMetrics(h.client, "tcc", "failed", start)
 		return err
 	}
 
@@ -186,9 +256,11 @@ func (h *TransactionHelper) ExecuteTCC(ctx context.Context, gid string, branches
 
 	// If need to wait for result
 	if opts.WaitResult {
-		return h.waitTransactionResult(ctx, gid, TransTypeTCC)
+		err = h.waitTransactionResult(ctx, gid, TransTypeTCC)
+		recordTransactionMetrics(h.client, "tcc", statusFromErr(err), start)
+		return err
 	}
-
+	recordTransactionMetrics(h.client, "tcc", "success", start)
 	return nil
 }
 
@@ -198,8 +270,19 @@ func (h *TransactionHelper) ExecuteMsg(ctx context.Context, gid string, queryPre
 		opts = DefaultTransactionOptions()
 	}
 
+	start := time.Now()
+	if m := h.client.getMetrics(); m != nil {
+		m.IncActiveTransactions()
+	}
+	defer func() {
+		if m := h.client.getMetrics(); m != nil {
+			m.DecActiveTransactions()
+		}
+	}()
+
 	msg := h.client.NewMsg(gid)
 	if msg == nil {
+		recordTransactionMetrics(h.client, "msg", "failed", start)
 		return fmt.Errorf("failed to create MSG transaction")
 	}
 
@@ -207,9 +290,13 @@ func (h *TransactionHelper) ExecuteMsg(ctx context.Context, gid string, queryPre
 	msg.RequestTimeout = opts.BranchTimeout
 	msg.RetryInterval = opts.RetryInterval
 
-	// Add custom request headers
-	if len(opts.CustomHeaders) > 0 {
-		msg.BranchHeaders = opts.CustomHeaders
+	// Add request headers (pass_through from config + custom)
+	passThrough := []string(nil)
+	if cfg := h.client.GetConfig(); cfg != nil {
+		passThrough = cfg.GetPassThroughHeaders()
+	}
+	if headers := mergeBranchHeaders(passThrough, opts.CustomHeaders); len(headers) > 0 {
+		msg.BranchHeaders = headers
 	}
 
 	// Add all branches
@@ -221,6 +308,7 @@ func (h *TransactionHelper) ExecuteMsg(ctx context.Context, gid string, queryPre
 	err := msg.Prepare(queryPrepared)
 	if err != nil {
 		log.Errorf("MSG prepare failed: gid=%s, error=%v", gid, err)
+		recordTransactionMetrics(h.client, "msg", "failed", start)
 		return err
 	}
 
@@ -228,6 +316,7 @@ func (h *TransactionHelper) ExecuteMsg(ctx context.Context, gid string, queryPre
 	err = msg.Submit()
 	if err != nil {
 		log.Errorf("MSG transaction failed: gid=%s, error=%v", gid, err)
+		recordTransactionMetrics(h.client, "msg", "failed", start)
 		return err
 	}
 
@@ -235,32 +324,55 @@ func (h *TransactionHelper) ExecuteMsg(ctx context.Context, gid string, queryPre
 
 	// If need to wait for result
 	if opts.WaitResult {
-		return h.waitTransactionResult(ctx, gid, TransTypeMsg)
+		err = h.waitTransactionResult(ctx, gid, TransTypeMsg)
+		recordTransactionMetrics(h.client, "msg", statusFromErr(err), start)
+		return err
 	}
-
+	recordTransactionMetrics(h.client, "msg", "success", start)
 	return nil
 }
 
-// waitTransactionResult wait for transaction result
+// queryResult represents DTM server query API response (supports multiple formats)
+type queryResult struct {
+	Status      string `json:"status,omitempty"`
+	DtmResult   string `json:"dtm_result,omitempty"`
+	Transaction *struct {
+		Status string `json:"status,omitempty"`
+	} `json:"transaction,omitempty"`
+}
+
+// waitTransactionResult waits for transaction to complete by polling DTM query API
 func (h *TransactionHelper) waitTransactionResult(ctx context.Context, gid string, transType TransactionType) error {
-	// Here can implement polling logic to check transaction status
-	// Simplified example, actually should call DTM's query interface
-	ticker := time.NewTicker(2 * time.Second)
+	timeout := 5 * time.Minute
+	interval := 2 * time.Second
+	deadline := time.Now().Add(timeout)
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	timeout := time.After(5 * time.Minute)
-
 	for {
+		status, err := h.CheckTransactionStatus(gid)
+		if err != nil {
+			if errors.Is(err, ErrNotImplemented) {
+				return fmt.Errorf("WaitResult requires CheckTransactionStatus: %w", err)
+			}
+			log.Debugf("CheckTransactionStatus failed, retrying: gid=%s, err=%v", gid, err)
+		} else {
+			switch strings.ToLower(status) {
+			case "succeed", "success":
+				return nil
+			case "failed", "aborting":
+				return fmt.Errorf("transaction %s: gid=%s, type=%s", status, gid, transType)
+			}
+			// prepared, submitted, ongoing - keep polling
+		}
+
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-timeout:
-			return fmt.Errorf("transaction timeout: gid=%s, type=%s", gid, transType)
 		case <-ticker.C:
-			// Here should query transaction status
-			log.Debugf("Checking transaction status: gid=%s, type=%s", gid, transType)
-			// Simplified processing, actually need to call DTM API
-			return nil
+			if time.Now().After(deadline) {
+				return fmt.Errorf("transaction timeout: gid=%s, type=%s", gid, transType)
+			}
 		}
 	}
 }
@@ -309,12 +421,12 @@ func ExtractGrpcTransInfo(ctx context.Context) (*dtmcli.BranchBarrier, error) {
 	return dtmgrpc.BarrierFromGrpc(ctx)
 }
 
-// MustGenGid generate global transaction ID, panic on failure
+// MustGenGid generates a global transaction ID. Returns empty string if generation fails
+// (e.g. DTM server unreachable). Caller should check for empty and handle accordingly.
 func (h *TransactionHelper) MustGenGid() string {
 	gid := h.client.GenerateGid()
 	if gid == "" {
-		log.Errorf("Failed to generate transaction gid")
-		// Return a fallback GID or empty string to let caller handle
+		log.Errorf("Failed to generate transaction gid (DTM server may be unreachable)")
 		return ""
 	}
 	return gid
@@ -329,21 +441,59 @@ func (h *TransactionHelper) GenGid() (string, error) {
 	return gid, nil
 }
 
-// CheckTransactionStatus check transaction status
+// CheckTransactionStatus queries DTM server for transaction status.
+// Returns status: "succeed", "failed", "prepared", "submitted", "aborting", or "ongoing".
+// Returns ErrNotImplemented if DTM query API is unavailable or returns unexpected format.
 func (h *TransactionHelper) CheckTransactionStatus(gid string) (string, error) {
-	// Here should call DTM's query interface
-	// Simplified example
-	log.Infof("Checking transaction status for gid: %s", gid)
-	return "success", nil
+	baseURL := h.client.GetServerURL()
+	if baseURL == "" {
+		return "", fmt.Errorf("DTM server URL is not configured")
+	}
+	queryURL := strings.TrimSuffix(baseURL, "/") + "/query?gid=" + url.QueryEscape(gid)
+
+	client := dtmcli.GetRestyClient()
+	resp, err := client.R().Get(queryURL)
+	if err != nil {
+		return "", fmt.Errorf("query transaction status: %w", err)
+	}
+	if resp.StatusCode() == http.StatusNotFound {
+		return "", fmt.Errorf("%w: DTM query API not found (HTTP 404), server may not support /query", ErrNotImplemented)
+	}
+	if resp.StatusCode() != http.StatusOK {
+		return "", fmt.Errorf("query transaction status: HTTP %d", resp.StatusCode())
+	}
+
+	body := resp.String()
+	bodyLower := strings.ToLower(body)
+
+	// Try JSON parse first
+	var qr queryResult
+	if json.Unmarshal(resp.Body(), &qr) == nil {
+		if s := qr.Status; s != "" {
+			return strings.ToLower(s), nil
+		}
+		if s := qr.DtmResult; s != "" {
+			return strings.ToLower(s), nil
+		}
+		if qr.Transaction != nil && qr.Transaction.Status != "" {
+			return strings.ToLower(qr.Transaction.Status), nil
+		}
+	}
+
+	// Fallback: parse plain text status (DTM may return raw status string)
+	for _, s := range []string{"succeed", "success", "failed", "prepared", "submitted", "aborting", "ongoing"} {
+		if strings.Contains(bodyLower, s) {
+			return s, nil
+		}
+	}
+
+	return "", fmt.Errorf("%w: DTM query returned unrecognized response: %s", ErrNotImplemented, body)
 }
 
-// RegisterGrpcService register gRPC service to DTM
+// RegisterGrpcService registers gRPC service to DTM. Not yet implemented.
 func (h *TransactionHelper) RegisterGrpcService(serviceName string, endpoint string) error {
 	if h.client.GetGRPCServer() == "" {
 		return fmt.Errorf("gRPC server is not configured")
 	}
-
-	// Here can implement service registration logic
-	log.Infof("Registering gRPC service: name=%s, endpoint=%s", serviceName, endpoint)
-	return nil
+	return fmt.Errorf("%w: RegisterGrpcService (name=%s, endpoint=%s)", ErrNotImplemented, serviceName, endpoint)
 }

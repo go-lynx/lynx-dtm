@@ -25,19 +25,26 @@ func NewBarrierHandler(client *DTMClient) *BarrierHandler {
 
 // CallWithDB execute branch barrier within database transaction
 func (b *BarrierHandler) CallWithDB(ctx context.Context, db *sql.DB, req *dtmcli.BranchBarrier, fn dtmcli.BarrierBusiFunc) error {
+	if m := b.client.getMetrics(); m != nil {
+		m.IncBarrierOperations()
+	}
 	return req.CallWithDB(db, fn)
 }
 
 // CallWithTx execute branch barrier within existing transaction
 func (b *BarrierHandler) CallWithTx(ctx context.Context, tx *sql.Tx, req *dtmcli.BranchBarrier, fn dtmcli.BarrierBusiFunc) error {
+	if m := b.client.getMetrics(); m != nil {
+		m.IncBarrierOperations()
+	}
 	return req.Call(tx, fn)
 }
 
-// CreateBarrierFromGin create branch barrier from Gin request
+// CreateBarrierFromGin creates a branch barrier from Gin's *gin.Context.
+// Pass c as *gin.Context and extract query params: dtmcli.BarrierFromQuery(c.Request.URL.Query()).
+// Returns ErrNotImplemented as placeholder - implement based on your HTTP framework.
 func (b *BarrierHandler) CreateBarrierFromGin(c interface{}) (*dtmcli.BranchBarrier, error) {
-	// Adaptation is needed based on the actual web framework
-	// Example code assumes using Gin framework
-	return dtmcli.BarrierFromQuery(nil)
+	// Example for Gin: return dtmcli.BarrierFromQuery(c.(*gin.Context).Request.URL.Query())
+	return nil, fmt.Errorf("%w: CreateBarrierFromGin requires framework-specific implementation (e.g. gin.Context.Request.URL.Query())", ErrNotImplemented)
 }
 
 // CreateBarrierFromGrpc create branch barrier from gRPC request
