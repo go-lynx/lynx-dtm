@@ -38,6 +38,7 @@ type DTMClient struct {
 	*plugins.BasePlugin
 	// DTM configuration information
 	conf *conf.DTM
+	rt   plugins.Runtime
 	// DTM server URL for HTTP client
 	serverURL string
 	// gRPC connection for DTM
@@ -66,8 +67,40 @@ func NewDTMClient() *DTMClient {
 	}
 }
 
+func (d *DTMClient) InitializeContext(ctx context.Context, plugin plugins.Plugin, rt plugins.Runtime) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("context canceled before DTM initialize: %w", err)
+	}
+	return d.BasePlugin.Initialize(plugin, rt)
+}
+
+func (d *DTMClient) StartContext(ctx context.Context, _ plugins.Plugin) error {
+	return d.startupWithContext(ctx)
+}
+
+func (d *DTMClient) StopContext(ctx context.Context, _ plugins.Plugin) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("context canceled before DTM stop: %w", err)
+	}
+	return d.CleanupTasks()
+}
+
+func (d *DTMClient) IsContextAware() bool {
+	return true
+}
+
+func (d *DTMClient) PluginProtocol() plugins.PluginProtocol {
+	protocol := d.BasePlugin.PluginProtocol()
+	protocol.ContextLifecycle = true
+	return protocol
+}
+
 // InitializeResources method is used to load and initialize the DTM plugin
 func (d *DTMClient) InitializeResources(rt plugins.Runtime) error {
+	if err := d.BasePlugin.InitializeResources(rt); err != nil {
+		return err
+	}
+	d.rt = rt
 	// Initialize an empty configuration structure
 	d.conf = &conf.DTM{}
 
@@ -106,7 +139,14 @@ func (d *DTMClient) InitializeResources(rt plugins.Runtime) error {
 
 // StartupTasks starts the DTM client
 func (d *DTMClient) StartupTasks() error {
+	return d.startupWithContext(context.Background())
+}
+
+func (d *DTMClient) startupWithContext(ctx context.Context) error {
 	log.Infof("Initializing DTM client")
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("context canceled before DTM startup: %w", err)
+	}
 
 	if !d.conf.GetEnabled() {
 		log.Infof("DTM client is disabled")
@@ -127,12 +167,21 @@ func (d *DTMClient) StartupTasks() error {
 		}
 		var err error
 		for attempt := 0; attempt < maxRetries; attempt++ {
+			if err := ctx.Err(); err != nil {
+				return fmt.Errorf("DTM startup canceled during gRPC initialization: %w", err)
+			}
 			if attempt > 0 {
 				backoff := time.Duration(attempt) * 2 * time.Second
 				log.Infof("Retrying DTM gRPC connection in %v (attempt %d/%d)", backoff, attempt+1, maxRetries)
-				time.Sleep(backoff)
+				timer := time.NewTimer(backoff)
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					return fmt.Errorf("DTM startup canceled during retry backoff: %w", ctx.Err())
+				case <-timer.C:
+				}
 			}
-			d.grpcConn, err = d.dialGrpc()
+			d.grpcConn, err = d.dialGrpcContext(ctx)
 			if err == nil {
 				d.grpcServer = d.conf.GrpcServer
 				log.Infof("DTM gRPC client initialized with server: %s", d.conf.GrpcServer)
@@ -142,6 +191,35 @@ func (d *DTMClient) StartupTasks() error {
 		}
 		if d.grpcConn == nil {
 			return fmt.Errorf("failed to connect to DTM gRPC server after %d attempts: %w", maxRetries, err)
+		}
+	}
+
+	if d.rt != nil {
+		if err := d.rt.RegisterSharedResource(pluginName, d); err != nil {
+			return fmt.Errorf("failed to register DTM shared resource: %w", err)
+		}
+		if err := d.rt.RegisterPrivateResource("config", d.conf); err != nil {
+			log.Warnf("failed to register DTM private config resource: %v", err)
+		}
+		if d.serverURL != "" {
+			if err := d.rt.RegisterPrivateResource("server_url", d.serverURL); err != nil {
+				log.Warnf("failed to register DTM private server URL resource: %v", err)
+			}
+		}
+		if d.grpcConn != nil {
+			if err := d.rt.RegisterPrivateResource("grpc_connection", d.grpcConn); err != nil {
+				log.Warnf("failed to register DTM private gRPC connection resource: %v", err)
+			}
+		}
+		if d.grpcServer != "" {
+			if err := d.rt.RegisterPrivateResource("grpc_server", d.grpcServer); err != nil {
+				log.Warnf("failed to register DTM private gRPC server resource: %v", err)
+			}
+		}
+		if metrics := d.getMetrics(); metrics != nil {
+			if err := d.rt.RegisterPrivateResource("metrics", metrics); err != nil {
+				log.Warnf("failed to register DTM private metrics resource: %v", err)
+			}
 		}
 	}
 
@@ -162,6 +240,10 @@ func (d *DTMClient) CleanupTasks() error {
 
 // dialGrpc creates gRPC connection with optional TLS
 func (d *DTMClient) dialGrpc() (*grpc.ClientConn, error) {
+	return d.dialGrpcContext(context.Background())
+}
+
+func (d *DTMClient) dialGrpcContext(ctx context.Context) (*grpc.ClientConn, error) {
 	opts := []grpc.DialOption{
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(100 * 1024 * 1024)),
 	}
@@ -180,7 +262,7 @@ func (d *DTMClient) dialGrpc() (*grpc.ClientConn, error) {
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
 
-	return grpc.Dial(d.conf.GrpcServer, opts...)
+	return grpc.DialContext(ctx, d.conf.GrpcServer, opts...)
 }
 
 // buildGrpcTLSConfig builds TLS config from certificate files
