@@ -403,7 +403,7 @@ func TestTransactionTypes(t *testing.T) {
 // TestPluginMetadata tests plugin metadata constants
 func TestPluginMetadata(t *testing.T) {
 	assert.Equal(t, "dtm.server", pluginName)
-	assert.Equal(t, "v1.5.5", pluginVersion)
+	assert.Equal(t, "v1.6.0-beta", pluginVersion)
 	assert.Equal(t, "DTM distributed transaction manager plugin for Lynx framework", pluginDescription)
 	assert.Equal(t, "lynx.dtm", confPrefix)
 }
