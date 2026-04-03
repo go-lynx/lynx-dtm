@@ -215,4 +215,5 @@ tar -xzvf dtm_1.17.0_linux_amd64.tar.gz
 
 ## Notes
 
-- `NewTcc()` and `NewXa()` do not provide direct instance return implementations in the current version. Please use the Helper wrapper or DTM's native Global Transaction API as shown above.
+- `NewTcc()` and `NewXa()` now return preconfigured `*dtmcli.Tcc` / `*dtmcli.Xa` instances with the plugin's server URL, timeout, and retry settings applied.
+- Helper wrappers and DTM's native global transaction APIs remain the recommended orchestration path for full TCC / XA lifecycle management.

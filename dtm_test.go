@@ -138,11 +138,21 @@ func TestDTMClient_NewMsg(t *testing.T) {
 func TestDTMClient_NewTcc(t *testing.T) {
 	client := NewDTMClient()
 	client.serverURL = "http://localhost:36789/api/dtmsvr"
+	client.conf = &conf.DTM{
+		TransactionTimeout: 60,
+		Timeout:            10,
+		RetryInterval:      10,
+	}
 
 	// Test with configured server URL
 	tcc := client.NewTcc("test-gid")
-	// Should return nil as it's not implemented
-	assert.Nil(t, tcc)
+	assert.NotNil(t, tcc)
+	assert.Equal(t, "test-gid", tcc.Gid)
+	assert.Equal(t, "tcc", tcc.TransType)
+	assert.Equal(t, client.serverURL, tcc.Dtm)
+	assert.Equal(t, int64(60), tcc.TimeoutToFail)
+	assert.Equal(t, int64(10), tcc.RequestTimeout)
+	assert.Equal(t, int64(10), tcc.RetryInterval)
 
 	// Test with empty server URL
 	client.serverURL = ""
@@ -154,11 +164,21 @@ func TestDTMClient_NewTcc(t *testing.T) {
 func TestDTMClient_NewXa(t *testing.T) {
 	client := NewDTMClient()
 	client.serverURL = "http://localhost:36789/api/dtmsvr"
+	client.conf = &conf.DTM{
+		TransactionTimeout: 60,
+		Timeout:            10,
+		RetryInterval:      10,
+	}
 
 	// Test with configured server URL
 	xa := client.NewXa("test-gid")
-	// Should return nil as it's not implemented
-	assert.Nil(t, xa)
+	assert.NotNil(t, xa)
+	assert.Equal(t, "test-gid", xa.Gid)
+	assert.Equal(t, "xa", xa.TransType)
+	assert.Equal(t, client.serverURL, xa.Dtm)
+	assert.Equal(t, int64(60), xa.TimeoutToFail)
+	assert.Equal(t, int64(10), xa.RequestTimeout)
+	assert.Equal(t, int64(10), xa.RetryInterval)
 
 	// Test with empty server URL
 	client.serverURL = ""

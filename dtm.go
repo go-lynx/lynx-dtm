@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dtm-labs/client/dtmcli"
+	"github.com/dtm-labs/client/dtmcli/dtmimp"
 	"github.com/go-lynx/lynx-dtm/conf"
 	"github.com/go-lynx/lynx/log"
 	"github.com/go-lynx/lynx/plugins"
@@ -82,7 +83,7 @@ func (d *DTMClient) StopContext(ctx context.Context, _ plugins.Plugin) error {
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("context canceled before DTM stop: %w", err)
 	}
-	return d.CleanupTasks()
+	return d.cleanupWithContext(ctx)
 }
 
 func (d *DTMClient) IsContextAware() bool {
@@ -229,11 +230,24 @@ func (d *DTMClient) startupWithContext(ctx context.Context) error {
 
 // CleanupTasks cleans up DTM client resources
 func (d *DTMClient) CleanupTasks() error {
-	if d.grpcConn != nil {
-		if err := d.grpcConn.Close(); err != nil {
-			log.Errorf("Failed to close gRPC connection: %v", err)
-			return err
-		}
+	return d.cleanupWithContext(context.Background())
+}
+
+func (d *DTMClient) cleanupWithContext(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("context canceled before DTM cleanup: %w", err)
+	}
+	if d.grpcConn == nil {
+		return nil
+	}
+
+	conn := d.grpcConn
+	d.grpcConn = nil
+	d.grpcServer = ""
+
+	if err := conn.Close(); err != nil {
+		log.Errorf("Failed to close gRPC connection: %v", err)
+		return err
 	}
 	return nil
 }
@@ -342,9 +356,15 @@ func (d *DTMClient) NewTcc(gid string) *dtmcli.Tcc {
 		log.Errorf("DTM server URL is not configured")
 		return nil
 	}
-	// Not implemented with current dtmcli version. Please use TCC via dtmcli.TccGlobalTransaction.
-	log.Warnf("NewTcc is not implemented; please use TccGlobalTransaction for TCC")
-	return nil
+	if d.conf == nil {
+		log.Errorf("DTM configuration not initialized")
+		return nil
+	}
+	tcc := &dtmcli.Tcc{TransBase: *dtmimp.NewTransBase(gid, "tcc", d.serverURL, "")}
+	tcc.TimeoutToFail = int64(d.conf.TransactionTimeout)
+	tcc.RequestTimeout = int64(d.conf.Timeout)
+	tcc.RetryInterval = int64(d.conf.RetryInterval)
+	return tcc
 }
 
 // NewXa creates a new XA transaction
@@ -353,9 +373,15 @@ func (d *DTMClient) NewXa(gid string) *dtmcli.Xa {
 		log.Errorf("DTM server URL is not configured")
 		return nil
 	}
-	// Not implemented with current dtmcli version. Please use XA via dtmcli.XaGlobalTransaction or equivalent helper.
-	log.Warnf("NewXa is not implemented; please use XaGlobalTransaction for XA")
-	return nil
+	if d.conf == nil {
+		log.Errorf("DTM configuration not initialized")
+		return nil
+	}
+	xa := &dtmcli.Xa{TransBase: *dtmimp.NewTransBase(gid, "xa", d.serverURL, "")}
+	xa.TimeoutToFail = int64(d.conf.TransactionTimeout)
+	xa.RequestTimeout = int64(d.conf.Timeout)
+	xa.RetryInterval = int64(d.conf.RetryInterval)
+	return xa
 }
 
 // GenerateGid generates a new global transaction ID.
