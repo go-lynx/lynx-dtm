@@ -148,9 +148,11 @@ func (d *DTMClient) startupWithContext(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("context canceled before DTM startup: %w", err)
 	}
+	d.publishRuntimeContract(false, false)
 
 	if !d.conf.GetEnabled() {
 		log.Infof("DTM client is disabled")
+		d.publishRuntimeContract(false, true)
 		return nil
 	}
 
@@ -197,8 +199,10 @@ func (d *DTMClient) startupWithContext(ctx context.Context) error {
 
 	if d.rt != nil {
 		if err := d.rt.RegisterSharedResource(pluginName, d); err != nil {
+			d.publishRuntimeContract(false, false)
 			return fmt.Errorf("failed to register DTM shared resource: %w", err)
 		}
+		d.registerRuntimePluginAlias()
 		if err := d.rt.RegisterPrivateResource("config", d.conf); err != nil {
 			log.Warnf("failed to register DTM private config resource: %v", err)
 		}
@@ -224,6 +228,12 @@ func (d *DTMClient) startupWithContext(ctx context.Context) error {
 		}
 	}
 
+	if err := d.CheckHealth(); err != nil {
+		d.publishRuntimeContract(false, false)
+		return err
+	}
+	d.publishRuntimeContract(true, true)
+
 	log.Infof("DTM client successfully initialized")
 	return nil
 }
@@ -237,6 +247,7 @@ func (d *DTMClient) cleanupWithContext(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("context canceled before DTM cleanup: %w", err)
 	}
+	d.publishRuntimeContract(false, false)
 	if d.grpcConn == nil {
 		return nil
 	}
