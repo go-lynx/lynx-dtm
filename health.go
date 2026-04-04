@@ -1,6 +1,7 @@
 package dtm
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -28,9 +29,10 @@ func (d *DTMClient) CheckHealth() error {
 	// Probe DTM server: try newGid (lightweight, validates HTTP connectivity)
 	baseURL := strings.TrimSuffix(d.serverURL, "/")
 	client := dtmcli.GetRestyClient()
-	client.SetTimeout(5 * time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-	resp, err := client.R().Get(baseURL + "/newGid")
+	resp, err := client.R().SetContext(ctx).Get(baseURL + "/newGid")
 	if err != nil {
 		if m := d.getMetrics(); m != nil {
 			m.RecordHealthCheck("error")

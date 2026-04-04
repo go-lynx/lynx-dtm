@@ -3,8 +3,12 @@ package dtm
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/dtm-labs/client/dtmcli"
 	"github.com/go-lynx/lynx-dtm/conf"
 	"github.com/stretchr/testify/assert"
 )
@@ -74,6 +78,32 @@ func TestDTMClient_CleanupTasks(t *testing.T) {
 
 	err := client.CleanupTasks()
 	assert.NoError(t, err)
+}
+
+func TestDTMClient_CheckHealth_DoesNotMutateSharedHTTPClientTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/newGid" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte("gid-123"))
+	}))
+	defer server.Close()
+
+	sharedClient := dtmcli.GetRestyClient()
+	originalTimeout := sharedClient.GetClient().Timeout
+	t.Cleanup(func() {
+		sharedClient.SetTimeout(originalTimeout)
+	})
+	sharedClient.SetTimeout(17 * time.Second)
+
+	client := NewDTMClient()
+	client.conf = &conf.DTM{Enabled: true}
+	client.serverURL = server.URL
+
+	err := client.CheckHealth()
+	assert.NoError(t, err)
+	assert.Equal(t, 17*time.Second, sharedClient.GetClient().Timeout)
 }
 
 // TestDTMClient_GetServerURL tests getting server URL
