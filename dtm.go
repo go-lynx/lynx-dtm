@@ -1,3 +1,7 @@
+// Package dtm provides a DTM (Distributed Transaction Manager) plugin for the
+// go-lynx framework. It wraps dtm-labs/client and supports SAGA, TCC, XA, and
+// two-phase message patterns, with automatic transaction barrier handling,
+// optional gRPC connectivity, Prometheus metrics, and a context-aware lifecycle.
 package dtm
 
 import (
@@ -263,12 +267,15 @@ func (d *DTMClient) cleanupWithContext(ctx context.Context) error {
 	return nil
 }
 
-// dialGrpc creates gRPC connection with optional TLS
-func (d *DTMClient) dialGrpc() (*grpc.ClientConn, error) {
-	return d.dialGrpcContext(context.Background())
-}
-
+// dialGrpcContext creates a gRPC connection with optional TLS.
+// It uses grpc.NewClient (the non-deprecated successor to grpc.DialContext).
+// The context is checked for cancellation before dialing but is not passed to
+// grpc.NewClient, which does not accept one (connections are lazy by default).
 func (d *DTMClient) dialGrpcContext(ctx context.Context) (*grpc.ClientConn, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("context canceled before gRPC dial: %w", err)
+	}
+
 	opts := []grpc.DialOption{
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(100 * 1024 * 1024)),
 	}
@@ -287,7 +294,7 @@ func (d *DTMClient) dialGrpcContext(ctx context.Context) (*grpc.ClientConn, erro
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
 
-	return grpc.DialContext(ctx, d.conf.GrpcServer, opts...)
+	return grpc.NewClient(d.conf.GrpcServer, opts...)
 }
 
 // buildGrpcTLSConfig builds TLS config from certificate files
@@ -422,7 +429,7 @@ func (d *DTMClient) GenerateGid() string {
 
 // CallBranch is deprecated. It does not perform actual TCC branch calls.
 // Use dtmcli.TccGlobalTransaction with tcc.CallBranch, or TransactionHelper.ExecuteTCC instead.
-func (d *DTMClient) CallBranch(_ context.Context, _ interface{}, _, _, _ string) (*dtmcli.BranchBarrier, error) {
+func (d *DTMClient) CallBranch(_ context.Context, _ any, _, _, _ string) (*dtmcli.BranchBarrier, error) {
 	return nil, fmt.Errorf("%w: use dtmcli.TccGlobalTransaction or TransactionHelper.ExecuteTCC for TCC branches", ErrNotImplemented)
 }
 

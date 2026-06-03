@@ -379,23 +379,23 @@ func (h *TransactionHelper) waitTransactionResult(ctx context.Context, gid strin
 
 // SAGABranch SAGA branch definition
 type SAGABranch struct {
-	Action     string      // Forward operation URL
-	Compensate string      // Compensation operation URL
-	Data       interface{} // Request data
+	Action     string // Forward operation URL
+	Compensate string // Compensation operation URL
+	Data       any    // Request data
 }
 
 // TCCBranch TCC branch definition
 type TCCBranch struct {
-	Try     string      // Try phase URL
-	Confirm string      // Confirm phase URL
-	Cancel  string      // Cancel phase URL
-	Data    interface{} // Request data
+	Try     string // Try phase URL
+	Confirm string // Confirm phase URL
+	Cancel  string // Cancel phase URL
+	Data    any    // Request data
 }
 
 // MsgBranch message branch definition
 type MsgBranch struct {
-	Action string      // Operation URL
-	Data   interface{} // Request data
+	Action string // Operation URL
+	Data   any    // Request data
 }
 
 // XABranch XA branch definition

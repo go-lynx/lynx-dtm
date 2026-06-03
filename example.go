@@ -33,12 +33,12 @@ func (s *ExampleService) TransferExample(ctx context.Context, fromAccount, toAcc
 	saga := s.dtmClient.NewSaga(gid)
 
 	// Define transfer data
-	transferOut := map[string]interface{}{
+	transferOut := map[string]any{
 		"account": fromAccount,
 		"amount":  amount,
 	}
 
-	transferIn := map[string]interface{}{
+	transferIn := map[string]any{
 		"account": toAccount,
 		"amount":  amount,
 	}
@@ -75,13 +75,13 @@ func (s *ExampleService) OrderExample(ctx context.Context, orderID string, userI
 	gid := s.dtmClient.GenerateGid()
 
 	// Inventory deduction request
-	inventoryReq := map[string]interface{}{
+	inventoryReq := map[string]any{
 		"product_id": productID,
 		"quantity":   quantity,
 	}
 
 	// Create order request
-	orderReq := map[string]interface{}{
+	orderReq := map[string]any{
 		"order_id":   orderID,
 		"user_id":    userID,
 		"product_id": productID,
@@ -135,7 +135,7 @@ func (s *ExampleService) MessageExample(ctx context.Context, messageID string, c
 	msg := s.dtmClient.NewMsg(gid)
 
 	// Message data
-	messageData := map[string]interface{}{
+	messageData := map[string]any{
 		"message_id": messageID,
 		"content":    content,
 	}
@@ -185,7 +185,7 @@ func (s *ExampleService) BarrierExample(ctx context.Context, bb *dtmcli.BranchBa
 }
 
 // HandleTCCTryExample TCC Try phase handling example
-func (s *ExampleService) HandleTCCTryExample(ctx context.Context, req map[string]interface{}) error {
+func (s *ExampleService) HandleTCCTryExample(ctx context.Context, req map[string]any) error {
 	// Create branch barrier from request
 	bb, err := dtmcli.BarrierFromQuery(nil)
 	if err != nil {
@@ -227,7 +227,7 @@ func (s *ExampleService) HandleTCCTryExample(ctx context.Context, req map[string
 }
 
 // HandleTCCConfirmExample TCC Confirm phase handling example
-func (s *ExampleService) HandleTCCConfirmExample(ctx context.Context, req map[string]interface{}) error {
+func (s *ExampleService) HandleTCCConfirmExample(ctx context.Context, req map[string]any) error {
 	bb, err := dtmcli.BarrierFromQuery(nil)
 	if err != nil {
 		return err
@@ -253,7 +253,7 @@ func (s *ExampleService) HandleTCCConfirmExample(ctx context.Context, req map[st
 }
 
 // HandleTCCCancelExample TCC Cancel phase handling example
-func (s *ExampleService) HandleTCCCancelExample(ctx context.Context, req map[string]interface{}) error {
+func (s *ExampleService) HandleTCCCancelExample(ctx context.Context, req map[string]any) error {
 	bb, err := dtmcli.BarrierFromQuery(nil)
 	if err != nil {
 		return err
@@ -289,17 +289,17 @@ func (s *ExampleService) WorkflowExample(ctx context.Context) error {
 		{
 			Action:     "http://localhost:8080/api/step1",
 			Compensate: "http://localhost:8080/api/step1/compensate",
-			Data:       map[string]interface{}{"step": 1},
+			Data:       map[string]any{"step": 1},
 		},
 		{
 			Action:     "http://localhost:8080/api/step2",
 			Compensate: "http://localhost:8080/api/step2/compensate",
-			Data:       map[string]interface{}{"step": 2},
+			Data:       map[string]any{"step": 2},
 		},
 		{
 			Action:     "http://localhost:8080/api/step3",
 			Compensate: "http://localhost:8080/api/step3/compensate",
-			Data:       map[string]interface{}{"step": 3},
+			Data:       map[string]any{"step": 3},
 		},
 	}
 

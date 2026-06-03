@@ -42,7 +42,7 @@ func (b *BarrierHandler) CallWithTx(ctx context.Context, tx *sql.Tx, req *dtmcli
 // CreateBarrierFromGin creates a branch barrier from Gin's *gin.Context.
 // Pass c as *gin.Context and extract query params: dtmcli.BarrierFromQuery(c.Request.URL.Query()).
 // Returns ErrNotImplemented as placeholder - implement based on your HTTP framework.
-func (b *BarrierHandler) CreateBarrierFromGin(c interface{}) (*dtmcli.BranchBarrier, error) {
+func (b *BarrierHandler) CreateBarrierFromGin(c any) (*dtmcli.BranchBarrier, error) {
 	// Example for Gin: return dtmcli.BarrierFromQuery(c.(*gin.Context).Request.URL.Query())
 	return nil, fmt.Errorf("%w: CreateBarrierFromGin requires framework-specific implementation (e.g. gin.Context.Request.URL.Query())", ErrNotImplemented)
 }
