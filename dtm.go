@@ -37,36 +37,25 @@ const (
 	confPrefix = "lynx.dtm"
 )
 
-// DTMClient represents the DTM client plugin
+// DTMClient is the Lynx plugin that manages the DTM distributed transaction client.
 type DTMClient struct {
-	// Embed base plugin, inherit common properties and methods of the plugin
 	*plugins.BasePlugin
-	// DTM configuration information
-	conf *conf.DTM
-	rt   plugins.Runtime
-	// DTM server URL for HTTP client
-	serverURL string
-	// gRPC connection for DTM
-	grpcConn *grpc.ClientConn
-	// gRPC server address
+	conf       *conf.DTM
+	rt         plugins.Runtime
+	serverURL  string      // HTTP endpoint for the DTM server
+	grpcConn   *grpc.ClientConn
 	grpcServer string
 }
 
-// NewDTMClient creates a new DTM plugin instance
+// NewDTMClient creates a new DTM plugin instance.
 func NewDTMClient() *DTMClient {
 	return &DTMClient{
 		BasePlugin: plugins.NewBasePlugin(
-			// Generate unique plugin ID
 			plugins.GeneratePluginID("", pluginName, pluginVersion),
-			// Plugin name
 			pluginName,
-			// Plugin description
 			pluginDescription,
-			// Plugin version
 			pluginVersion,
-			// Configuration prefix
 			confPrefix,
-			// Weight
 			90,
 		),
 	}
@@ -100,22 +89,18 @@ func (d *DTMClient) PluginProtocol() plugins.PluginProtocol {
 	return protocol
 }
 
-// InitializeResources method is used to load and initialize the DTM plugin
+// InitializeResources loads DTM configuration and resolves the server URL and gRPC address.
 func (d *DTMClient) InitializeResources(rt plugins.Runtime) error {
 	if err := d.BasePlugin.InitializeResources(rt); err != nil {
 		return err
 	}
 	d.rt = rt
-	// Initialize an empty configuration structure
 	d.conf = &conf.DTM{}
-
-	// Scan and load DTM configuration from runtime configuration
 	err := rt.GetConfig().Value(confPrefix).Scan(d.conf)
 	if err != nil {
 		return err
 	}
 
-	// Set default configuration
 	if d.conf.ServerUrl == "" {
 		d.conf.ServerUrl = "http://localhost:36789/api/dtmsvr"
 	}
