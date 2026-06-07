@@ -28,7 +28,7 @@ const (
 	pluginName = "dtm.server"
 
 	// pluginVersion indicates the current version of the DTM plugin
-	pluginVersion = "v1.6.1"
+	pluginVersion = "v1.6.3"
 
 	// pluginDescription briefly describes the functionality of the DTM plugin
 	pluginDescription = "DTM distributed transaction manager plugin for Lynx framework"
